@@ -4,17 +4,36 @@ import numpy as np
 from RSA_API import *
 import sys
 from datetime import datetime
-import os
+import matplotlib.pyplot as plt
+import pandas as pd 
+# import os
 
-# RTLD_LAZY = 0x0001
-# LAZYLOAD = RTLD_LAZY | RTLD_GLOBAL
-# rsa = CDLL("./libRSA_API.so",LAZYLOAD)
-# usbapi = CDLL("./libcyusb_shared.so",LAZYLOAD)
+RTLD_LAZY = 0x0001
+LAZYLOAD = RTLD_LAZY | RTLD_GLOBAL
+rsa = CDLL("./libRSA_API.so",LAZYLOAD)
+usbapi = CDLL("./libcyusb_shared.so",LAZYLOAD)
 
-# C:\Tektronix\RSA_API\lib\x64 needs to be added to the
-# PATH system environment variable
-# os.chdir("C:\\Tektronix\\RSA_API\\lib\\x64")
-rsa = cdll.LoadLibrary("C:\\Tektronix\\RSA_API\\lib\\x64\\RSA_API.dll")
+# rsa = cdll.LoadLibrary("C:\\Tektronix\\RSA_API\\lib\\x64\\RSA_API.dll")
+
+def plot_spectrum_from_csv(csv_filename):
+    df = pd.read_csv(csv_filename)
+    
+    frequencies = [float(freq) for freq in df.columns[1:]]
+    power_values = df.iloc[:, 1:].values
+
+    for power in power_values:
+        plt.plot(frequencies, power)
+
+    plt.xlabel('Frequency (MHz)')
+    plt.ylabel('Power (dBm)')
+    plt.title('Spectrum Analysis')
+    
+    plt.xlim(min(frequencies), max(frequencies))
+    plt.tight_layout()
+
+    png_filename = csv_filename.replace('.csv', '.png')
+    plt.savefig(png_filename)
+    plt.close()
 
 """################CLASSES AND FUNCTIONS################"""
 def err_check(rs):
@@ -134,7 +153,7 @@ def spectrum_csv_capture():
     
     specSet = config_spectrum(cf_hz, refLevel, span_hz, rbw_hz)
     filetime = datetime.today().strftime('%Y%m%d-%H%M%S')
-    filename = f'C:\\Users\\novaj\\IFSS\\{filetime}.csv'
+    filename = f'/home/noaa_gms/IFSS/traces/{filetime}.csv'
     spec_settings = Spectrum_Settings()
     err_check(rsa.SPECTRUM_GetSettings(byref(spec_settings)))
     trace_length = spec_settings.traceLength
@@ -151,18 +170,16 @@ def spectrum_csv_capture():
     header = 'Timestamp,' + ','.join(map(lambda f: f"{round(f, 4)}", freq_list_mhz))
     
     cycle = 0
-    while cycle < 1: # Remove this later
+    while cycle < 3600: # Remove this later
         cycle += 1
         trace = acquire_spectrum(specSet)
              
         currentTime = datetime.today().isoformat(sep=' ', timespec='milliseconds')
 
-        # Find the index of the highest peak in the trace
-        peak_index = np.argmax(trace)
-        # Find the power level of the highest peak
-        highest_peak_power = trace[peak_index]
-        # Find the frequency corresponding to the highest peak
-        peak_frequency_mhz = freq_list_mhz[peak_index]
+        # Find the index of the highest peak in the trace and report (fro tesing only)
+        # peak_index = np.argmax(trace)
+        # highest_peak_power = trace[peak_index]
+        # peak_frequency_mhz = freq_list_mhz[peak_index]
 
         mode = 'w' if cycle == 1 else 'a'
         with open(filename, mode) as f:
@@ -170,9 +187,10 @@ def spectrum_csv_capture():
                 f.write(header + '\n')
             trace_str = currentTime + ',' + ','.join(map(str, trace))
             f.write(trace_str + '\n')
+            # plot_spectrum_from_csv(filename)
         
         sleep(1) 
-        print(f'\rCurrent Trace Index: {cycle} - Highest Peak: {highest_peak_power:.2f} dBm at {peak_frequency_mhz:.4f} MHz', end='')
+        # print(f'\Last Trace Index: {cycle} - Highest Peak: {highest_peak_power:.2f} dBm at {peak_frequency_mhz:.4f} MHz', end='')
 
 
 def main():
