@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spectrum Display</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+
+    <style>
+        body {
+            background-color: black;
+            color: white; 
+        }
+    </style>
+
+</head>
+<body>
+    <h2><center>Spectrum Data</center></h2>
+    <canvas id="spectrumChart"></canvas>
+    <script>
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+    
+        socket.on('connect', function() {
+            socket.emit('request_data');
+        });
+
+        socket.on('update_data', function(data) {
+            // Update the chart with the received data
+        });
+
+        const ctx = document.getElementById('spectrumChart').getContext('2d');
+        let chart;
+
+        async function fetchData() {
+            const response = await fetch('/data');
+            const data = await response.json();
+            const labels = Object.keys(data);
+            const values = Object.values(data);
+            updateChart(labels, values);
+        }
+
+        function updateChart(labels, values) {
+            if (chart) {
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = values;
+                chart.update();
+            } else {
+                chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            data: values,
+                            borderColor: 'rgb(75, 192, 192)',
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                enabled: true,
+                                callbacks: {
+                                    label: function(context) {
+                                        return context.parsed.y;
+                                    }
+                                }
+                            }
+                        },
+                        interaction: {
+                            intersect: false,
+                            mode: 'nearest'
+                        },
+                        scales: {
+                            y: {
+                                min: -125,
+                                max: -60,
+                                ticks: {
+                                    stepSize: 5,
+                                    callback: function(value, index, values) {
+                                        return value + ' dBm';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+
+        setInterval(fetchData, 1000);
+    </script>
+</body>
+</html>

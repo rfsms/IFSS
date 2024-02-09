@@ -7,8 +7,8 @@ from pymongo import MongoClient
 
 # MongoDB setup
 client = MongoClient('mongodb://localhost:27017/')
-db = client.ifss
-collection = db.spectrumData
+db = client["ifss"]
+collection = db["spectrumData"]
 
 RTLD_LAZY = 0x0001
 LAZYLOAD = RTLD_LAZY | RTLD_GLOBAL
