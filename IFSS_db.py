@@ -80,8 +80,8 @@ def spectrum_capture():
     search_connect()
     
     # Define center frequency, span, and RBW in MHz cause math...
-    cf_mhz = 2020
-    span_mhz = 20.0
+    cf_mhz = 1712.5
+    span_mhz = 15.0
     rbw_khz = 15.0
     refLevel = -80
     

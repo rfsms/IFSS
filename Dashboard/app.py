@@ -1,7 +1,10 @@
 from flask import Flask, render_template, jsonify
+import requests
 from flask_socketio import SocketIO
 import logging
 import pymongo
+import threading
+import time
 
 # Logging setup
 for handler in logging.root.handlers[:]:
@@ -20,6 +23,26 @@ collection = db["spectrumData"]
 # Custom log function for SocketIO
 def log_socketio_error(event, error_info):
     logging.error(f"Error in SocketIO {event}: {error_info}")
+
+@app.route('/fetch-schedule')
+def fetch_schedule():
+    url = "https://dbps.aoml.noaa.gov/scheduled_received/schedule.txt"
+    response = requests.get(url)
+    data = response.text
+
+    # Process the text data to extract the table
+    lines = data.splitlines()
+    table_start = False
+    table_lines = []
+    for line in lines:
+        if line.startswith("ITEM  SAT"):
+            table_start = True
+        if table_start:
+            table_lines.append(line)
+
+    # Return the entire table
+    return jsonify(table_lines)
+
 
 @app.route('/')
 def index():
