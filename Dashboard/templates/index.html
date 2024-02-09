@@ -24,22 +24,24 @@
 </head>
 <body class="bg-black text-white">
     <div class="grid grid-cols-2 grid-rows-2 h-screen">
-        <div class="frequency-data border border-white p-4">
-            <canvas id="frequencyChart"></canvas>
-        </div>
-        <div class="quadrant border border-white row-span-2 p-4 flex flex-col justify-center items-center" id="right">
-            <div id="scheduleData">Loading schedule data...</div>
-        </div>
-        <div class="quadrant border border-white p-4" id="bottom-left">Bottom Left Content</div>
+        <div class="frequency-data border border-white p-4"><canvas id="frequencyChart"></canvas></div>
+        <div id="right" class="quadrant border border-white row-span-2 p-4 flex flex-col justify-center items-center"><div id="scheduleData">Loading schedule data...</div></div>
+        <div id="bottom-left" class="quadrant border border-white p-4">Bottom Left Content</div>
     </div>
-
-
-    <h2><center>Frequency Data</center></h2>
-    <canvas id="frequencyChart" width="400" height="180"></canvas>
-
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
     <script>
+        const ctx = document.getElementById('frequencyChart').getContext('2d');
+        let chart;
+        var socket = io.connect('http://' + document.domain + ':' + location.port);
+    
+        socket.on('connect', function() {
+            socket.emit('request_data');
+        });
+        socket.on('update_data', function(data) {
+            // Update the chart with the received data
+        });
+
         async function fetchScheduleData() {
             const response = await fetch('/fetch-schedule');
             const data = await response.json();
@@ -47,21 +49,7 @@
             const scheduleElement = document.getElementById('scheduleData');
             scheduleElement.innerHTML = data.join('<br>');
         }
-
         fetchScheduleData();
-
-        var socket = io.connect('http://' + document.domain + ':' + location.port);
-    
-        socket.on('connect', function() {
-            socket.emit('request_data');
-        });
-
-        socket.on('update_data', function(data) {
-            // Update the chart with the received data
-        });
-
-        const ctx = document.getElementById('frequencyChart').getContext('2d');
-        let chart;
 
         async function fetchData() {
             const response = await fetch('/data');
