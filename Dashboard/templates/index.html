@@ -6,66 +6,137 @@
     <title>Spectrum Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <style>
-        body {
-            background-color: black;
+        #scheduleData table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: #4b4b4b; /* Set the background color for the table */
         }
-        .quadrant {
-            color: white;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            border: 2px solid white;
+        #scheduleData th, #scheduleData td {
+            text-align: left;
+            padding: 8px; 
+            font-size: 10px; /* Adjust font size as needed */
+            /* border-bottom: 1px solid #333; Optional: add a subtle border for separation */
+            color: #fff; /* Set text color for better contrast against the dark background */
         }
-        #scheduleData {
-            max-height: 1500px;
-            overflow-y: auto; 
+        #scheduleData tr {
+            background-color: #4b4b4b; /* Ensures entire row is consistent color */
+        }
+        #scheduleData th {
+            /* position: sticky; */
+            top: 0; /* Make the header stick to the top */
+            background-color: #333; /* Slightly darker background for the header */
+            z-index: 2; /* Ensure the header is above other content */
         }
     </style>
+    
+    
+    
 </head>
 <body class="bg-black text-white">
     <div class="grid grid-cols-2 grid-rows-2 h-screen">
-        <div class="frequency-data border border-white p-4"><canvas id="frequencyChart"></canvas></div>
-        <div id="right" class="quadrant border border-white row-span-2 p-4 flex flex-col justify-center items-center"><div id="scheduleData">Loading schedule data...</div></div>
-        <div id="bottom-left" class="quadrant border border-white p-4">Bottom Left Content</div>
+        <div class="frequency-data border border-white p-4">
+            <canvas id="lineChart"></canvas>
+        </div>
+        <div id="right" class="quadrant border border-white row-span-2 p-4 flex flex-col justify-center items-center">
+            <div id="scheduleData">Loading schedule data...</div>
+        </div>
+        <div id="spectrogramPlot" class="quadrant border border-white p-4"></div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <script>
-        const ctx = document.getElementById('frequencyChart').getContext('2d');
-        let chart;
-        var socket = io.connect('http://' + document.domain + ':' + location.port);
-    
-        socket.on('connect', function() {
-            socket.emit('request_data');
-        });
-        socket.on('update_data', function(data) {
-            // Update the chart with the received data
-        });
+        let lineChart;
+        let spectrogramData = [{
+            z: [],
+            type: 'heatmap',
+            colorscale: 'Viridis',
+            zmin: -140,
+            zmax: -40,
+        }];
+        let timestamps = [];
+        let timeIndex = 0;
+        let lastPlottedData = null;
 
-        async function fetchScheduleData() {
-            const response = await fetch('/fetch-schedule');
-            const data = await response.json();
-            
-            const scheduleElement = document.getElementById('scheduleData');
-            scheduleElement.innerHTML = data.join('<br>');
+        const headers = ["ITEM", "SAT", "DIR", "EL", "MODE", "START", "END"];
+        const table = document.createElement('table');
+        table.classList.add('table-auto', 'w-full', 'text-left', 'whitespace-normal');
+
+        async function fetchDailySchedule() {
+            try {
+                const response = await fetch('/daily-schedule');
+                const schedule = await response.json();
+
+                const scheduleElement = document.getElementById('scheduleData');
+                scheduleElement.innerHTML = ''; // Clear existing content
+
+                // Create a table
+                const table = document.createElement('table');
+                table.classList.add('table'); // Add 'table' class for styling if you're using a CSS framework like Bootstrap
+
+                // Create the header row
+                const thead = document.createElement('thead');
+                const headerRow = document.createElement('tr');
+                headers.forEach(headerText => {
+                    const header = document.createElement('th');
+                    header.textContent = headerText;
+                    headerRow.appendChild(header);
+                });
+                thead.appendChild(headerRow);
+                table.appendChild(thead);
+
+                // Create the body of the table
+                const tbody = document.createElement('tbody');
+                schedule.forEach(item => {
+                    const row = document.createElement('tr');
+                    headers.forEach(header => {
+                        const cell = document.createElement('td');
+                        // Map the header to the item's property and handle undefined properties
+                        let text = '';
+                        switch (header) {
+                            case 'ITEM': text = item.item || 'N/A'; break;
+                            case 'SAT': text = item.sat || 'N/A'; break;
+                            case 'DIR': text = item.dir || 'N/A'; break;
+                            case 'EL': text = item.el || 'N/A'; break;
+                            case 'MODE': text = item.mode || 'N/A'; break;
+                            case 'START': text = item.start || 'N/A'; break;
+                            case 'END': text = item.end || 'N/A'; break;
+                        }
+                        cell.textContent = text;
+                        row.appendChild(cell);
+                    });
+                    tbody.appendChild(row);
+                });
+                table.appendChild(tbody);
+
+                // Append the table to the scheduleElement
+                scheduleElement.appendChild(table);
+            } catch (error) {
+                console.error('Error fetching daily schedule:', error);
+                document.getElementById('scheduleData').textContent = 'Failed to load schedule.';
+            }
         }
-        fetchScheduleData();
 
-        async function fetchData() {
-            const response = await fetch('/data');
-            const data = await response.json();
-            const labels = Object.keys(data);
-            const values = Object.values(data);
-            updateChart(labels, values);
+        function shouldUpdateCharts(newData) {
+            let newDataString = JSON.stringify(newData);
+            if (newDataString === lastPlottedData) {
+                // Data hasn't changed, no need to update
+                return false;
+            }
+            // Data has changed, update needed
+            lastPlottedData = newDataString;
+            return true;
         }
 
-        function updateChart(labels, values) {
-            if (chart) {
-                chart.data.labels = labels;
-                chart.data.datasets[0].data = values;
-                chart.update();
+        // Function to initialize/update the Chart.js line chart
+        function updateLineChart(labels, values, timestamp) {
+            if (lineChart) {
+                lineChart.data.labels = labels;
+                lineChart.data.datasets[0].data = values;
+                lineChart.options.plugins.title.text = 'Data as of ' + timestamp + ' UTC';
+                lineChart.update();
             } else {
-                chart = new Chart(ctx, {
+                const ctx = document.getElementById('lineChart').getContext('2d');
+                lineChart = new Chart(ctx, {
                     type: 'line',
                     data: {
                         labels: labels,
@@ -77,6 +148,10 @@
                     },
                     options: {
                         plugins: {
+                            title: {
+                                display: true,
+                                text: 'Data as of ' + timestamp
+                            },
                             legend: {
                                 display: false
                             },
@@ -84,24 +159,17 @@
                                 enabled: true,
                                 callbacks: {
                                     label: function(context) {
-                                        return context.parsed.y;
+                                        return context.parsed.y + ' dBm';
                                     }
                                 }
                             }
-                        },
-                        interaction: {
-                            intersect: false,
-                            mode: 'nearest'
                         },
                         scales: {
                             y: {
                                 min: -140,
                                 max: -60,
                                 ticks: {
-                                    stepSize: 5,
-                                    callback: function(value, index, values) {
-                                        return value + ' dBm';
-                                    }
+                                    stepSize: 5
                                 }
                             }
                         }
@@ -110,7 +178,109 @@
             }
         }
 
-        setInterval(fetchData, 1000);
+        // Function to initialize/update the spectrogram
+        function updateSpectrogram(frequencies, values) {
+            spectrogramData[0].z.push(values);
+
+            let now = new Date();
+            timestamps.push(now);
+
+            // Format timestamps for display
+            let formattedTimestamps = timestamps.map(t => {
+                let hours = t.getUTCHours().toString().padStart(2, '0');
+                let minutes = t.getUTCMinutes().toString().padStart(2, '0');
+                let seconds = t.getUTCSeconds().toString().padStart(2, '0');
+                return `${hours}:${minutes}:${seconds}`;
+            });
+
+            // Dynamic label calculation for x-axis
+            let plotWidth = document.getElementById('spectrogramPlot').clientWidth;
+            let maxLabelsX = plotWidth / 50;
+            let tickSpacingX = Math.max(1, Math.floor(frequencies.length / maxLabelsX));
+
+            let tickvals = [];
+            let ticktext = [];
+            for (let i = 0; i < frequencies.length; i += tickSpacingX) {
+                tickvals.push(i); 
+                ticktext.push(`${frequencies[i].toFixed(2)} MHz`);
+            }
+
+            // Dynamic label calculation for y-axis
+            let plotHeight = document.getElementById('spectrogramPlot').clientHeight;
+            let maxLabelsY = plotHeight / 50;
+            let tickSpacingY = Math.max(1, Math.floor(timestamps.length / maxLabelsY));
+
+            let tickValsY = [];
+            let tickTextsY = [];
+            for (let i = 0; i < timestamps.length; i += tickSpacingY) {
+                tickValsY.push(i);
+                tickTextsY.push(formattedTimestamps[i]);
+            }
+
+            // Keep the number of time slices and timestamps in sync + remove the oldest timestamp
+            const maxTimeSlices = 50;
+            if (spectrogramData[0].z.length > maxTimeSlices) {
+                spectrogramData[0].z.shift();
+                timestamps.shift();
+            }
+
+            // Update and plot the magic
+            Plotly.react('spectrogramPlot', spectrogramData, {
+                xaxis: {
+                    tickvals: tickvals,
+                    ticktext: ticktext,
+                    tickangle: -45,
+                },
+                yaxis: {
+                    tickvals: tickValsY,
+                    ticktext: tickTextsY,
+                },
+                colorscale: 'Viridis',
+                zmin: -140,
+                zmax: -40,
+                type: 'heatmap',
+                colorbar: {
+                    title: 'Power (dBm)',
+                    titleside: 'right',
+                },
+                autosize: false,
+                width: 1200,
+                height: 600,
+                plot_bgcolor: 'black',
+                paper_bgcolor: 'black',
+                margin: {
+                    l: 80,
+                    r: 50,
+                    b: 100,
+                    t: 50,
+                    pad: 4
+                }
+            }, {
+                displayModeBar: false
+            });
+        }
+
+        async function fetchData() {
+            const response = await fetch('/data');
+            const newData = await response.json();
+
+            if (shouldUpdateCharts(newData)) {
+                const frequencies = Object.keys(newData).map(parseFloat);
+                const values = Object.values(newData);
+
+                let now = new Date();
+                let formattedTimestamp = now.toISOString().replace('T', ' ').slice(0, 19);
+
+                updateLineChart(frequencies, values, formattedTimestamp);
+                updateSpectrogram(frequencies, values);
+            }
+        }
+
+        // Fetch and update data every second
+        setInterval(fetchData, 500);
+
+        fetchDailySchedule();
+
     </script>
 </body>
 </html>
