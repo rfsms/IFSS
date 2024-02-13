@@ -1,10 +1,7 @@
 from flask import Flask, render_template, jsonify
-import requests
-from flask_socketio import SocketIO
 import logging
-import pymongo
-import threading
-import time
+from pymongo import MongoClient
+from datetime import datetime, timedelta
 
 # Logging setup
 for handler in logging.root.handlers[:]:
@@ -14,70 +11,53 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-socketio = SocketIO(app, async_mode='eventlet')
-
-client = pymongo.MongoClient("mongodb://localhost:27017/")
+client = MongoClient("mongodb://localhost:27017/")
 db = client["ifss"]
-collection = db["spectrumData"]
+spectrumCollection = db["spectrumData"]
+scheduleCollection = db["satSchedule"]
 
-# Custom log function for SocketIO
-def log_socketio_error(event, error_info):
-    logging.error(f"Error in SocketIO {event}: {error_info}")
+@app.route('/daily-schedule')
+def daily_schedule():
+    utc_now = datetime.utcnow()
+    today_start = utc_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = today_start + timedelta(days=1)
 
-@app.route('/fetch-schedule')
-def fetch_schedule():
-    url = "https://dbps.aoml.noaa.gov/scheduled_received/schedule.txt"
-    response = requests.get(url)
-    data = response.text
+    # Query for schedules that have their timestamp within today's date range
+    schedules_today = scheduleCollection.find({
+        "timestamp": {
+            "$gte": today_start,
+            "$lt": today_end
+        }
+    })
 
-    # Process the text data to extract the table
-    lines = data.splitlines()
-    table_start = False
-    table_lines = []
-    for line in lines:
-        if line.startswith("ITEM  SAT"):
-            table_start = True
-        if table_start:
-            table_lines.append(line)
+    # Prepare the data for JSON serialization
+    schedules_list = []
+    for schedule in schedules_today:
+        schedule["_id"] = str(schedule["_id"])  # Convert ObjectId to string
+        schedules_list.append({
+            "item": schedule.get("item"),
+            "dir": schedule.get("dir"),
+            "el": schedule.get("el"),
+            "end": schedule.get("end"),
+            "idle": schedule.get("idle"),
+            "mode": schedule.get("mode"),
+            "ovr": schedule.get("ovr"),
+            "sat": schedule.get("sat"),
+            "start": schedule.get("start")
+        })
 
-    # Return the entire table
-    return jsonify(table_lines)
-
+    return jsonify(schedules_list)
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-def fetch_latest_data():
-    document = collection.find().sort([('_id', -1)]).limit(1)
-    for doc in document:
-        return doc['frequencies']
-
 @app.route('/data')
 def data():
-    document = collection.find().sort([('_id', -1)]).limit(1)
+    document = spectrumCollection.find().sort([('_id', -1)]).limit(1)
     for doc in document:
         return jsonify(doc['frequencies'])
     return jsonify({})
 
-@socketio.on('connect')
-def handle_connect():
-    try:
-        logging.info("Client connected")
-    except Exception as e:
-        log_socketio_error('connect', str(e))
-
-@socketio.on('request_data')
-def handle_request_data():
-    data = fetch_latest_data()
-    socketio.emit('update_data', data)
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    try:
-        logging.info("Client disconnected")
-    except Exception as e:
-        log_socketio_error('disconnect', str(e))
-
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=8080, debug=False)
+    app.run(host='0.0.0.0', port=8080, debug=False)
