@@ -15,7 +15,7 @@ LAZYLOAD = RTLD_LAZY | RTLD_GLOBAL
 rsa = CDLL("./libRSA_API.so",LAZYLOAD)
 usbapi = CDLL("./libcyusb_shared.so",LAZYLOAD)
 
-"""################CLASSES AND FUNCTIONS################"""
+"""################ SETUP ################"""
 def err_check(rs):
     if ReturnStatus(rs) != ReturnStatus.noError:
         raise RSAError(ReturnStatus(rs).name)
@@ -41,7 +41,7 @@ def search_connect():
         err_check(rsa.DEVICE_Connect(deviceIDs[0]))
     rsa.CONFIG_Preset()
 
-"""################SPECTRUM EXAMPLE################"""
+"""################ DEFAULT CONFIG SETUP ################"""
 def config_spectrum(cf=1e9, refLevel=0, span=40e6, rbw=300e3):
     rsa.SPECTRUM_SetEnable(c_bool(True))
     rsa.CONFIG_SetCenterFreq(c_double(cf))
@@ -50,7 +50,7 @@ def config_spectrum(cf=1e9, refLevel=0, span=40e6, rbw=300e3):
     rsa.SPECTRUM_SetDefault()
     specSet = Spectrum_Settings()
     rsa.SPECTRUM_GetSettings(byref(specSet))
-    specSet.window = SpectrumWindows.SpectrumWindow_Kaiser
+    specSet.window = SpectrumWindows.SpectrumWindow_Hann
     specSet.verticalUnit = SpectrumVerticalUnits.SpectrumVerticalUnit_dBm
     specSet.span = span
     specSet.rbw = rbw
@@ -80,10 +80,14 @@ def spectrum_capture():
     search_connect()
     
     # Define center frequency, span, and RBW in MHz cause math...
-    cf_mhz = 1712.5
-    span_mhz = 15.0
+    # cf_mhz = 1702.5
+    # span_mhz = 15.0
+    # rbw_khz = 15.0
+    # refLevel = -80
+    cf_mhz = 2437.0
+    span_mhz = 20.0
     rbw_khz = 15.0
-    refLevel = -80
+    refLevel = -40
     
     # Convert MHz to Hz for the API calls
     cf_hz = cf_mhz * 1e6
@@ -102,7 +106,7 @@ def spectrum_capture():
     freq_list_mhz = [startfreq_mhz + i * step_mhz for i in range(trace_length)]
  
     cycle = 0
-    while cycle < 10: # Remove this later
+    while cycle < 100: # Remove this later
         cycle += 1
         trace = acquire_spectrum(specSet)
         currentTime = datetime.today().isoformat(sep=' ', timespec='milliseconds')
