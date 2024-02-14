@@ -30,7 +30,7 @@ def daily_schedule():
         }
     })
 
-    # Prepare the data for JSON serializatin
+    # Prepare the data for JSON serialization
     schedules_list = []
     for schedule in schedules_today:
         schedule["_id"] = str(schedule["_id"])  # Convert ObjectId to string
