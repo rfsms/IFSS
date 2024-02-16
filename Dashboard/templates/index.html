@@ -32,8 +32,10 @@
             z-index: 2;
         }
         #scheduleData .greyed-out {
-            background-color: #313131;
-            color: #ffffff;
+            background-color: #181818;
+        }
+        #scheduleData tr.greyed-out td {
+            color: #7a7a7a ;
         }
     </style>
 </head>
@@ -57,8 +59,59 @@
         let maxTimeSlices = 60;
         let currentFrequencies;
         let currentValues;
-
         const headers = ["ITEM", "SAT", "DIR", "EL", "MODE", "START TIME", "END TIME"];
+
+        function scrollToHighlightedRow() {
+            // console.log("Attempting to scroll to the next or current event...");
+            
+            // Get the current UTC date and time
+            const now = new Date();
+            const nowUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours(), now.getUTCMinutes(), now.getUTCSeconds()));
+
+            // For simplicity, since we're comparing times within the same day
+            const currentTimeString = nowUtc.toISOString().split('T')[1].slice(0, 8);
+            // console.log(`Current UTC Time String: ${currentTimeString}`);
+
+            let closestFutureEvent = null;
+            let smallestTimeDiff = Infinity;
+            const allRows = document.querySelectorAll('#scheduleData tr');
+
+            allRows.forEach((row) => {
+                const startTimeString = row.cells[5].textContent;
+                const endTimeString = row.cells[6].textContent; 
+
+                // Since we're only comparing times, not dates
+                const eventStartTime = new Date(`1970-01-01T${startTimeString}Z`);
+                const eventEndTime = new Date(`1970-01-01T${endTimeString}Z`);
+                const currentTime = new Date(`1970-01-01T${currentTimeString}Z`);
+
+                // Check if the event is currently happening
+                if (currentTime >= eventStartTime && currentTime <= eventEndTime) {
+                    // console.log("Found a currently happening event:", row);
+                    closestFutureEvent = row;
+                    return; 
+                }
+
+                // For upcoming events, find the one that's closest to the current time
+                const timeDiff = eventStartTime - currentTime;
+                if (timeDiff > 0 && timeDiff < smallestTimeDiff) {
+                    smallestTimeDiff = timeDiff;
+                    closestFutureEvent = row;
+                }
+            });
+
+            if (closestFutureEvent) {
+                // console.log("Scrolling to the next or current event:", closestFutureEvent);
+                closestFutureEvent.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'nearest',
+                    inline: 'start'
+                });
+                // console.log("Scroll initiated.");
+            } else {
+                // console.log("No next or current event found to scroll to.");
+            }
+        }
 
         async function fetchDailySchedule() {
             try {
@@ -140,7 +193,8 @@
                 console.error('Error fetching daily schedule:', error);
                 document.getElementById('scheduleData').textContent = 'Failed to load schedule.';
             }
-            // console.log('...fetchingAgain');
+            // console.log("Finished populating the table. Now attempting to auto-scroll...");
+            scrollToHighlightedRow();
         }
 
 
