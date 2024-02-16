@@ -31,14 +31,10 @@
             background-color: #333;
             z-index: 2;
         }
-        .highlighted-row {
-            background-color: yellow;
-        }
-        .greyed-out {
-            background-color: #757575;
+        #scheduleData .greyed-out {
+            background-color: #313131;
             color: #ffffff;
         }
-
     </style>
 </head>
 <body class="bg-black text-white">
@@ -68,15 +64,13 @@
             try {
                 const response = await fetch('/daily-schedule');
                 const schedule = await response.json();
-
                 const scheduleElement = document.getElementById('scheduleData');
                 scheduleElement.innerHTML = '';
 
-                // Create table with tailwind
+                // Create table, header, and body with tailwind
                 const table = document.createElement('table');
                 table.classList.add('min-w-full', 'divide-y', 'divide-gray-200');
 
-                // Create the header row with tailwind
                 const thead = document.createElement('thead');
                 thead.classList.add('bg-gray-50');
                 const headerRow = document.createElement('tr');
@@ -89,9 +83,12 @@
                 thead.appendChild(headerRow);
                 table.appendChild(thead);
 
-                // Create the body of the table with tailwind
                 const tbody = document.createElement('tbody');
                 tbody.classList.add('bg-white', 'divide-y', 'divide-gray-200');
+
+                const nowUtc = new Date();
+                // console.log(`Current UTC Time: ${nowUtc.toISOString()}`);
+
                 schedule.forEach((item, index) => {
                     const row = document.createElement('tr');
                     // alternate row backgrounds
@@ -100,6 +97,22 @@
                     } else {
                         row.classList.add('bg-white');
                     }
+
+                    // Parse the start and end times into Date objects
+                    const startDate = new Date(`${item.startDate} ${item.startTime} UTC`);
+                    const endDate = new Date(`${item.endDate} ${item.endTime} UTC`);
+
+                    // console.log(`Event ITEM: ${item.item}, Start: ${startDate.toISOString()}, End: ${endDate.toISOString()}`);
+
+                    // Check if the current time is within the event's start and end times
+                    if (nowUtc >= startDate && nowUtc <= endDate) {
+                        // console.log(`ITEM: ${item.item} is currently happening.`);
+                        row.classList.add('greyed-out'); // Currently happening
+                    } else if (nowUtc > endDate) {
+                        // console.log(`ITEM: ${item.item} has ended.`);
+                        row.classList.add('greyed-out'); // Past event
+                    }
+
                     headers.forEach(header => {
                         const cell = document.createElement('td');
                         cell.classList.add('px-6', 'py-4', 'whitespace-nowrap');
@@ -116,6 +129,7 @@
                         cell.textContent = text;
                         row.appendChild(cell);
                     });
+
                     tbody.appendChild(row);
                 });
                 table.appendChild(tbody);
@@ -126,8 +140,9 @@
                 console.error('Error fetching daily schedule:', error);
                 document.getElementById('scheduleData').textContent = 'Failed to load schedule.';
             }
-            console.log('...fetchingAgain')
+            // console.log('...fetchingAgain');
         }
+
 
         function shouldUpdateCharts(newData) {
             const newDataString = JSON.stringify(newData);
