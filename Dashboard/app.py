@@ -22,7 +22,6 @@ def daily_schedule():
     today_start = utc_now.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + timedelta(days=1)
 
-    # Query for schedules that have their timestamp within today's date range
     schedules_today = scheduleCollection.find({
         "timestamp": {
             "$gte": today_start,
@@ -30,20 +29,21 @@ def daily_schedule():
         }
     })
 
-    # Prepare the data for JSON serialization
     schedules_list = []
     for schedule in schedules_today:
-        schedule["_id"] = str(schedule["_id"])  # Convert ObjectId to string
+        schedule["_id"] = str(schedule["_id"])
         schedules_list.append({
             "item": schedule.get("item"),
             "dir": schedule.get("dir"),
             "el": schedule.get("el"),
-            "end": schedule.get("end"),
+            "endDate": schedule.get("endDate"),
+            "endTime": schedule.get("endTime"),
             "idle": schedule.get("idle"),
             "mode": schedule.get("mode"),
             "ovr": schedule.get("ovr"),
             "sat": schedule.get("sat"),
-            "start": schedule.get("start")
+            "startDate": schedule.get("startDate"),
+            "startTime": schedule.get("startTime"),
         })
 
     return jsonify(schedules_list)
