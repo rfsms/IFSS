@@ -1,15 +1,16 @@
 import schedule
-from time import sleep
-from datetime import datetime
+import http.client
+from datetime import datetime, timedelta, time as tm
 import logging
-import json
-from pymongo import MongoClient
-import IFSS
+from time import sleep
+from pymongo import MongoClient, errors
+import IFSS_RSA
+import csv
+import re
 
 # MongoDB setup
 client = MongoClient('mongodb://localhost:27017/')
 db = client["ifss"]
-spectrumData = db["spectrumData"]
 satSchedule = db["satSchedule"]
 
 # Reset the Root Logger and seup logging
@@ -17,8 +18,125 @@ for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
 logging.basicConfig(filename='/home/noaa_gms/IFSS/IFSS_SA.log', level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
-# Check if the current time is 00:00 UTC or later, and if so, call RFSS_{SPECAN}.main()
-if datetime.datetime.utcnow().time() >= datetime.time(0, 0):
-    logging.info('-----------------------------------------------------')
-    logging.info('RFSS service restarted. Using current schedule.')
-    IFSS.main()
+def scheduleExists():
+    now = datetime.utcnow()
+    if now.time() >= tm(0, 6):
+        # Find if there's a document with a timestamp within today's date range
+        schedule_exists = satSchedule.find_one({
+            "timestamp": {
+                "$gte": datetime(now.year, now.month, now.day),
+                "$lt": datetime(now.year, now.month, now.day) + timedelta(days=1)
+            }
+        })
+        
+        if not schedule_exists:
+            logging.info('ScheduleExists() No schedule data available for today, fetching new schedule.')
+            fetchReport()
+        else:
+            logging.info('scheduleExists() Schedule data for today already exists.')
+
+# Fetch report is done daily using schedule at 00:06 UTC (AOML/IRC all run cronjobs @ 00:05UTC for 48 hour window schedules)  
+def fetchReport():
+    '''
+    Designed to fetch satellite schedule data from a selected earth station EOS-FES, 
+    parse the data to filter records for the current day since the schedule is a 48 hour window, 
+    and then insert the records into a MongoDB db ('ifss') collection ('satSchedule').
+
+    Sample Data vs regex (parts[])
+    174473 NOAA 21              N    28  DAY    16-Feb-2024 00:20:43  16-Feb-2024 00:32:48  0    1
+
+    (\d+) captures 174473 (item)
+    ([\w\s-]+) captures NOAA 21 (satellite name, sat)
+    (\w) captures N (direction, dir)
+    (\d+) captures 28 (elevation, el)
+    (\w) captures DAY (mode)
+    (\d+-\w+-\d+) captures 16-Feb-2024 (start date)
+    (\d+:\d+:\d+) captures 00:20:43 (start time)
+    (\d+-\w+-\d+) captures 16-Feb-2024 (end date)
+    (\d+:\d+:\d+) captures 00:32:48 (end time)
+    (\d+) captures 0 (over, ovr)
+    (\d+) captures 1 (idle)
+    '''
+    try:
+        now = datetime.utcnow()
+        # Create a unique identifier for today's date to check against the database
+        todaysDateId = now.strftime('%d-%b-%Y')
+        
+        # Check for the existence of a document for today based on 'todaysDateId'
+        schedule_exists = satSchedule.find_one({"dateId": todaysDateId}) is not None
+
+        if not schedule_exists:
+            logging.info("fetchReport() No schedule data available for today, fetching new schedule.")
+            
+            # Establish HTTP connection and request the schedule
+            conn = http.client.HTTPSConnection("dbps.aoml.noaa.gov", 443)
+            conn.request("GET", "/scheduled_received/schedule.txt")
+            response = conn.getresponse()
+
+            if response.status == 200:
+                data = response.read().decode('utf-8')
+                lines = data.splitlines()
+                
+                todaysDate = datetime.utcnow().strftime('%d-%b-%Y')  # Format for matching in the document
+                rows = []
+
+                # Process each line of the fetched data
+                for line in lines:
+                    match = re.match(r"(\d+)\s+([\w\s-]+)\s+(\w)\s+(\d+)\s+(\w+)\s+(\d+-\w+-\d+)\s+(\d+:\d+:\d+)\s+(\d+-\w+-\d+)\s+(\d+:\d+:\d+)\s+(\d+)\s+(\d+)", line)
+                    if match:
+                        parts = match.groups()
+                        startDate = parts[5]
+                        if startDate == todaysDate:
+                            record = {
+                                "item": parts[0],
+                                "sat": parts[1].strip(),
+                                "dir": parts[2],
+                                "el": int(parts[3]),
+                                "mode": parts[4],
+                                "startDate": parts[5],
+                                "startTime": parts[6],
+                                "endDate": parts[7],
+                                "endTime": parts[8],
+                                "ovr": int(parts[9]),
+                                "idle": int(parts[10])
+                            }
+                            rows.append(record)
+
+                # Sort the schedule entries by start time
+                rows.sort(key=lambda x: x['startTime'])
+
+                # Write the schedule to a CSV file
+                output_path = "/home/noaa_gms/IFSS/Tools/Report_Exports/schedule.csv"
+                with open(output_path, 'w', newline='') as file:
+                    writer = csv.writer(file)
+                    writer.writerow(["ITEM", "SAT", "DIR", "EL", "MODE", "Start Date", "Start Time", "End Date", "End Time", "OVR", "IDLE"])
+                    for row in rows:
+                        writer.writerow([row["item"], row["sat"], row["dir"], row["el"], row["mode"],
+                                         row["startDate"], row["startTime"], row["endDate"], row["endTime"],
+                                         row["ovr"], row["idle"]])
+
+                # Insert the processed data into MongoDB
+                document = {
+                    "timestamp": datetime.utcnow(),
+                    "schedule": rows
+                }
+                satSchedule.insert_one(document)
+                logging.info('New schedule extracted, logged, and inserted into MongoDB.')
+
+            else:
+                logging.error(f"Failed to fetch schedule: {response.status}, {response.reason}")
+        else:
+            logging.info('fetchReport() Schedule data for today already exists in the database.')
+
+    except Exception as e:
+        logging.error(f'An error occurred in fetchReport(): {e}')
+
+
+schedule.every().day.at("00:06").do(scheduleExists)
+scheduleExists()
+
+
+while True:
+    schedule.run_pending()
+    sleep(1)
+    
