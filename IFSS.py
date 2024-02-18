@@ -3,7 +3,7 @@ import http.client
 from datetime import datetime, timedelta, time as tm
 import logging
 from time import sleep
-from pymongo import MongoClient, errors
+from pymongo import MongoClient
 import IFSS_RSA
 import csv
 import re
@@ -18,24 +18,8 @@ for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
 logging.basicConfig(filename='/home/noaa_gms/IFSS/IFSS_SA.log', level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
-def scheduleExists():
-    now = datetime.utcnow()
-    if now.time() >= tm(0, 6):
-        # Find if there's a document with a timestamp within today's date range
-        schedule_exists = satSchedule.find_one({
-            "timestamp": {
-                "$gte": datetime(now.year, now.month, now.day),
-                "$lt": datetime(now.year, now.month, now.day) + timedelta(days=1)
-            }
-        })
-        
-        if not schedule_exists:
-            logging.info('ScheduleExists() No schedule data available for today, fetching new schedule.')
-            fetchReport()
-        else:
-            logging.info('scheduleExists() Schedule data for today already exists.')
-
-# Fetch report is done daily using schedule at 00:06 UTC (AOML/IRC all run cronjobs @ 00:05UTC for 48 hour window schedules)  
+# Fetch report is done daily using schedule at 00:06 UTC 
+# since AOML/IRC all run cronjobs @ 00:05UTC for 48 hour window schedules)  
 def fetchReport():
     '''
     Designed to fetch satellite schedule data from a selected earth station EOS-FES, 
@@ -59,11 +43,11 @@ def fetchReport():
     '''
     try:
         now = datetime.utcnow()
-        # Create a unique identifier for today's date to check against the database
-        todaysDateId = now.strftime('%d-%b-%Y')
+        start_of_today = datetime(now.year, now.month, now.day)
+        end_of_today = start_of_today + timedelta(days=1)
         
-        # Check for the existence of a document for today based on 'todaysDateId'
-        schedule_exists = satSchedule.find_one({"dateId": todaysDateId}) is not None
+        # Determine if a schedule for today already exists
+        schedule_exists = satSchedule.find_one({"timestamp": {"$gte": start_of_today, "$lt": end_of_today}}) is not None
 
         if not schedule_exists:
             logging.info("fetchReport() No schedule data available for today, fetching new schedule.")
@@ -122,19 +106,26 @@ def fetchReport():
                 }
                 satSchedule.insert_one(document)
                 logging.info('New schedule extracted, logged, and inserted into MongoDB.')
-
             else:
                 logging.error(f"Failed to fetch schedule: {response.status}, {response.reason}")
         else:
-            logging.info('fetchReport() Schedule data for today already exists in the database.')
+            logging.info("fetchReport() Schedule data for today already exists in the database.")
+
 
     except Exception as e:
-        logging.error(f'An error occurred in fetchReport(): {e}')
+        logging.info(f'An error occurred in fetchReport(): {e}')
 
+    # Call IFSS_RSA.main() outside the try-except block to ensure it's called in all scenarios
+    logging.info('Attempting to call IFSS_RSA.main()')
+    try:
+        IFSS_RSA.main()  # Ensure this is the correct call
+        logging.info('IFSS_RSA.main() called successfully')
+    except Exception as e:
+        logging.error(f'Failed to call IFSS_RSA.main(): {e}')
 
-schedule.every().day.at("00:06").do(scheduleExists)
-scheduleExists()
+schedule.every().day.at("00:06").do(fetchReport)
 
+fetchReport()
 
 while True:
     schedule.run_pending()
