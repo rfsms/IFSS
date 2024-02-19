@@ -4,92 +4,155 @@ from datetime import datetime
 import logging
 import json
 from pymongo import MongoClient
-import IFSS_db
+import subprocess
+import csv
+import os
 
 # MongoDB setup
 client = MongoClient('mongodb://localhost:27017/')
 db = client["ifss"]
 spectrumData = db["spectrumData"]
 satSchedule = db["satSchedule"]
+scheduleRun = db["scheduleRun"]
 
 # Reset the Root Logger and seup logging
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
 logging.basicConfig(filename='/home/noaa_gms/IFSS/IFSS_SA.log', level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
-# Check if the current time is 00:00 UTC or later, and if so, call RFSS_{SPECAN}.main()
-if datetime.datetime.utcnow().time() >= datetime.time(0, 0):
-    logging.info('-----------------------------------------------------')
-    logging.info('IFSS service restarted. Using current schedule.')
-    IFSS_db.main()
+CSV_FILE_PATH = '/home/noaa_gms/IFSS/Tools/Report_Exports/schedule.csv'
 
-# Fetch report is done daily using schedule at 00:00 UTC
-def fetchReport():
+def restart_service():
     try:
-        logging.info(f"Fetching report for use.")
-        conn = http.client.HTTPConnection("192.168.4.1", 80)
-        conn.request("GET", "/report?a=38771;43689;28654;33591") #NOAA18 28654;NOAA19 33591;METOPB 38771;METOPC 43689
-        response = conn.getresponse()
-
-        if response.status == 200:
-            data = json.loads(response.read().decode())["list"][:-1]
-
-            # Get the current day of the week and initialize an empty list to put the response in
-            today = datetime.datetime.utcnow().weekday()
-            rows = []
-
-            # Response received -> define the data
-            for entry in data:
-                satellite = entry[1].replace(" ", "-")
-                aos_time = datetime.datetime.utcfromtimestamp(entry[2])
-                los_time = datetime.datetime.utcfromtimestamp(entry[3])
-                day_of_week = aos_time.weekday()
-                max_elevation = entry[7]
-                
-                # Make sure to drop any items in the schedule that are not today and that are above minElevation
-                # We do this since teh schedule will provide a couple of days.  Since we are doing this daily
-                # we restrict the schedule to avoid duplicates 
-                if day_of_week == today and max_elevation > minElevation:
-                    formatted_aos = f"({aos_time.hour},{aos_time.minute},{aos_time.second})"
-                    formatted_los = f"({los_time.hour},{los_time.minute},{los_time.second})"
-                    rows.append((aos_time, day_of_week, formatted_aos, formatted_los, satellite, max_elevation))
-
-            # Sort the schedule list
-            rows.sort(key=lambda x: x[0])
-
-            # Write the scehdule to csv to use in RFSS_{SPECAN}.main()
-            output_path = "/home/noaa_gms/RFSS/Tools/Report_Exports/schedule.csv"
-            with open(output_path, 'w', newline='') as file:
-                writer = csv.writer(file)
-                writer.writerow(["Pass", "DayofWeek", "AOS", "LOS", "Satellite", "MaxElevation"])
-                for index, row in enumerate(rows, start=1):
-                    writer.writerow([index, row[1], row[2], row[3], row[4], row[5]])
-
-            # Additionally add the schedule with write timestamp to mongoDB for use later 
-            file_path = "/home/noaa_gms/RFSS/Tools/Report_Exports/schedule.csv"
-            with open(file_path, newline='') as csvfile:
-                reader = csv.DictReader(csvfile)
-                rows = [row for row in reader]
-
-                # Convert AOS and LOS into proper tuples
-                for row in rows:
-                    row['AOS'] = tuple(map(int, row['AOS'][1:-1].split(',')))
-                    row['LOS'] = tuple(map(int, row['LOS'][1:-1].split(',')))
-                    row['MaxElevation'] = float(row['MaxElevation'])
-
-                # Insert the data into MongoDB as a single document
-                document = {
-                    "timestamp": datetime.datetime.utcnow(),
-                    "schedule": rows,
-                    }
-                schedule_collection.insert_one(document)
-
-            logging.info('New schedule extracted, logged and ready for use.')
-
-            logging.info("Attempting check_and_set_rotator function")
-            check_and_set_rotator()
-
-            runningModule.main()
-
+        logging.info("Attempting to restart IFSS.service")
+        subprocess.run(['sudo', '/home/noaa_gms/IFSS/Tools/restart_IFSS.sh'], check=True)
+        logging.info(f"Successfully requested restart IFSS.service.")
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to restart the IFSS.service: {e}")
     except Exception as e:
-        logging.error(f'An error occuredL {e}')
+        logging.error(f"Unexpected error while restarting the IFSS.service: {e}")
+
+def handle_pause(log_message, restart_message=None, sleep_time=5, loop_completed=None):
+    log_flag = True
+    was_paused = False
+    while os.path.exists("/home/noaa_gms/RFSS/pause_flag.txt"):
+        if log_flag:
+            logging.info(log_message)
+            log_flag = False
+        was_paused = True
+        sleep(sleep_time)
+    
+        if was_paused:
+            logging("Instrument after pause successful")
+
+            if restart_message:
+                logging.info(restart_message)
+            if loop_completed is not None:
+                loop_completed[0] = False
+
+        return was_paused
+
+def process_schedule():
+    logging.info("starting process schedule")
+    """
+    This function is the timing behind IFSS data capture.  Reads the CSV_FILE_PATH and goes through each row determining
+    aos/los, etc and compares against current time.  If older entries exist continue, if current time meet aos time then 
+    wait.  Once current time matches an aos, data is being captured until los.
+    FOR MXA, between aos/los capture induvidual IQs send to Received from SA.  Finally after los, move Received/*.mat to toDemod for processing.
+    """
+    loop_completed = [True]
+
+    with open(CSV_FILE_PATH, 'r') as csvfile:
+        logging.info("opening csv file")
+        csvreader = csv.reader(csvfile)
+        next(csvreader)
+
+        for row in csvreader:
+            logging.info("csv file in process")
+            handle_pause("Pause flag detected at start of row.", "Pause_flag removed. Restarting schedule...", loop_completed=loop_completed)
+
+            # Investigate me
+            if len(row) < 5:
+                logging.info(f"End of rows in schedule")
+                continue
+
+            aos_time = datetime.strptime(row[6], '%H:%M:%S').time()
+            los_time = datetime.strptime(row[8], '%H:%M:%S').time()
+
+            satellite_name = row[1]
+            now = datetime.utcnow().time()
+            
+            print(f'AOS: {aos_time}')
+            print(f'lOS: {los_time}')
+
+            # If current time has already passed the scheduled los_datetime, skip to the next schedule
+            if now > los_time:
+                continue
+
+            # If current time is before the scheduled aos_time, wait until aos_time is reached
+            while now < aos_time:
+                logging.info("now < aos_time")
+                handle_pause("Pause flag detected. Pausing pass schedule.", "Pause_flag removed. Restarting schedule...", sleep_time=1, loop_completed=loop_completed)
+                now = datetime.utcnow().time()
+                sleep(1)
+
+            # Adding a trigger to provide single hit log and start running
+            triggered = False
+
+            #Between AOL/LOS time
+            while True:
+                handle_pause("Schedule paused. Waiting for flag to be removed.", "Pause_flag removed. Restarting schedule...", loop_completed=loop_completed)
+                now = datetime.utcnow().time()
+                if now >= los_time:
+                    break
+                    
+                if not triggered:
+                    print(f'Current scheduled row under test: {row}')
+                    triggered = True
+
+                    # Insert the data into MongoDB as a single document
+                    document = {
+                        "timestamp": datetime.utcnow(),
+                        "row": row,
+                        }
+                    scheduleRun.insert_one(document)
+                
+                # Intrumentation happens here
+                logging.info("doing instruemtnstuff")
+                sleep(1)
+            
+            # Only execute this part if the loop was not broken by the pause flag
+            if loop_completed[0]:  # Check if loop completed successfully
+                document_update = {
+                    "$set": {
+                        "processed": "true"  # Set processed to "true" as the loop completed successfully
+                    }
+                }
+                scheduleRun.update_one({"timestamp": document["timestamp"]}, document_update)
+                logging.info("Scheduled row completed successfully!")
+            else:
+                document_update = {
+                    "$set": {
+                        "processed": "false"  # Set processed to "false" as the loop did not complete successfully
+                    }
+                }
+                scheduleRun.update_one({"timestamp": document["timestamp"]}, document_update)
+                logging.info("Scheduled row encountered errors.")
+
+def main():
+    logging.info("Starting IFSS_RSA main routine")
+
+    # Instrumentat setup here
+
+    try:
+        process_schedule()
+        logging.info("Schedule finished for the day.\n")
+    except Exception as e:
+        logging.info(f"An error occurred in RFSS_PXA.py main(): {e}")
+        restart_service()
+
+if __name__ == "__main__":
+    try:    
+        main()
+    except Exception as e:
+        logging.error(f"An error occurred in RFSS_PXA.py: {e}")
