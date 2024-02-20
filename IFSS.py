@@ -1,6 +1,6 @@
 import schedule
 import http.client
-from datetime import datetime, timedelta, time as tm
+from datetime import datetime, timedelta
 import logging
 from time import sleep
 from pymongo import MongoClient
@@ -27,6 +27,9 @@ def fetchReport():
     and then insert the records into a MongoDB db ('ifss') collection ('satSchedule').
 
     Sample Data vs regex (parts[])
+    
+    ITEM  SAT                  DIR  EL  MODE   START                 END                   OVR  IDLE
+    ------------------------------------------------------------------------------------------------
     174473 NOAA 21              N    28  DAY    16-Feb-2024 00:20:43  16-Feb-2024 00:32:48  0    1
 
     (\d+) captures 174473 (item)
