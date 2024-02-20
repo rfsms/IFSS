@@ -35,7 +35,7 @@
             background-color: #181818;
         }
         #scheduleData tr.greyed-out td {
-            color: #7a7a7a ;
+            color: #7a7a7a;
         }
     </style>
 </head>
@@ -209,7 +209,6 @@
             if (lineChart) {
                 lineChart.data.labels = labels;
                 lineChart.data.datasets[0].data = values;
-                lineChart.options.plugins.title.text = 'Data as of ' + timestamp + ' UTC';
                 lineChart.update();
             } else {
                 const ctx = document.getElementById('lineChart').getContext('2d');
@@ -218,7 +217,7 @@
                     data: { labels, datasets: [{ data: values, borderColor: 'rgb(75, 192, 192)', tension: 0.1 }] },
                     options: {
                         plugins: {
-                            title: { display: true, text: 'Data as of ' + timestamp },
+                            title: { display: true, text: 'AOML Data as of ' + timestamp },
                             legend: { display: false },
                             tooltip: {
                                 enabled: true,
@@ -305,7 +304,6 @@
             if (shouldUpdateCharts(newData)) {
                 const frequencies = Object.keys(newData).map(parseFloat);
                 const values = Object.values(newData);
-                // Update the global variables
                 currentFrequencies = frequencies;
                 currentValues = values;
                 const formattedTimestamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
