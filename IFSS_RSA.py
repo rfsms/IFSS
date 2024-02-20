@@ -1,8 +1,9 @@
-import schedule
+from ctypes import *
+from RSA_API import *
+import sys
 from time import sleep
 from datetime import datetime
 import logging
-import json
 from pymongo import MongoClient
 import subprocess
 import csv
@@ -20,7 +21,69 @@ for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
 logging.basicConfig(filename='/home/noaa_gms/IFSS/IFSS_SA.log', level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
+RTLD_LAZY = 0x0001
+LAZYLOAD = RTLD_LAZY | RTLD_GLOBAL
+rsa = CDLL("/home/noaa_gms/IFSS/libRSA_API.so", LAZYLOAD)
+usbapi = CDLL("/home/noaa_gms/IFSS/libcyusb_shared.so", LAZYLOAD)
+
 CSV_FILE_PATH = '/home/noaa_gms/IFSS/Tools/Report_Exports/schedule.csv'
+
+################ RSA SETUP AND CONFIG ################
+def err_check(rs):
+    if ReturnStatus(rs) != ReturnStatus.noError:
+        raise RSAError(ReturnStatus(rs).name)
+
+def search_connect():
+    numFound = c_int(0)
+    intArray = c_int * DEVSRCH_MAX_NUM_DEVICES
+    deviceIDs = intArray()
+    deviceSerial = create_string_buffer(DEVSRCH_SERIAL_MAX_STRLEN)
+    deviceType = create_string_buffer(DEVSRCH_TYPE_MAX_STRLEN)
+    apiVersion = create_string_buffer(DEVINFO_MAX_STRLEN)
+
+    rsa.DEVICE_GetAPIVersion(apiVersion)
+
+    err_check(rsa.DEVICE_Search(byref(numFound), deviceIDs, deviceSerial, deviceType))
+
+    if numFound.value < 1:
+        logging.info('No instruments found. Exiting script.')
+        sys.exit(0)
+    elif numFound.value == 1:
+        err_check(rsa.DEVICE_Connect(deviceIDs[0]))
+    rsa.CONFIG_Preset()
+
+def config_spectrum(cf=1e9, refLevel=0, span=40e6, rbw=300e3):
+    rsa.SPECTRUM_SetEnable(c_bool(True))
+    rsa.CONFIG_SetCenterFreq(c_double(cf))
+    rsa.CONFIG_SetReferenceLevel(c_double(refLevel))
+
+    rsa.SPECTRUM_SetDefault()
+    specSet = Spectrum_Settings()
+    rsa.SPECTRUM_GetSettings(byref(specSet))
+    specSet.window = SpectrumWindows.SpectrumWindow_Hann
+    specSet.verticalUnit = SpectrumVerticalUnits.SpectrumVerticalUnit_dBm
+    specSet.span = span
+    specSet.rbw = rbw
+    rsa.SPECTRUM_SetSettings(specSet)
+    rsa.SPECTRUM_GetSettings(byref(specSet))
+    return specSet
+
+def acquire_spectrum(specSet):
+    ready = c_bool(False)
+    traceArray = c_float * specSet.traceLength
+    traceData = traceArray()
+    outTracePoints = c_int(0)
+    traceSelector = SpectrumTraces.SpectrumTrace1
+
+    rsa.DEVICE_Run()
+    rsa.SPECTRUM_AcquireTrace()
+    while not ready.value:
+        rsa.SPECTRUM_WaitForDataReady(c_int(100), byref(ready))
+    rsa.SPECTRUM_GetTrace(traceSelector, specSet.traceLength, byref(traceData), byref(outTracePoints))
+    rsa.DEVICE_Stop()
+    
+    # Convert C float array to Python list of floats...arggghhh
+    return [float(traceData[i]) for i in range(specSet.traceLength)]
 
 def restart_service():
     try:
@@ -35,7 +98,7 @@ def restart_service():
 def handle_pause(log_message, restart_message=None, sleep_time=5, loop_completed=None):
     log_flag = True
     was_paused = False
-    while os.path.exists("/home/noaa_gms/RFSS/pause_flag.txt"):
+    while os.path.exists("/home/noaa_gms/IFSS/pause_flag.txt"):
         if log_flag:
             logging.info(log_message)
             log_flag = False
@@ -53,22 +116,48 @@ def handle_pause(log_message, restart_message=None, sleep_time=5, loop_completed
         return was_paused
 
 def process_schedule():
-    logging.info("starting process schedule")
     """
-    This function is the timing behind IFSS data capture.  Reads the CSV_FILE_PATH and goes through each row determining
+    This function is the timinga and capture behind IFSS code.  Connect to RSA360 and setup for capture. Then read the CSV_FILE_PATH and goes through each row determining
     aos/los, etc and compares against current time.  If older entries exist continue, if current time meet aos time then 
     wait.  Once current time matches an aos, data is being captured until los.
-    FOR MXA, between aos/los capture induvidual IQs send to Received from SA.  Finally after los, move Received/*.mat to toDemod for processing.
     """
+    search_connect()
+    logging.info("Connected to RSA306B")
+
+    # Define center frequency, span, and RBW in MHz cause math...
+    # cf_mhz = 1702.5
+    # span_mhz = 15.0
+    # rbw_khz = 15.0
+    # refLevel = -80
+    cf_mhz = 2437.0
+    span_mhz = 20.0
+    rbw_khz = 15.0
+    refLevel = -40
+    
+    # Convert MHz to Hz for the API calls
+    cf_hz = cf_mhz * 1e6
+    span_hz = span_mhz * 1e6
+    rbw_hz = rbw_khz * 1e3
+    
+    specSet = config_spectrum(cf_hz, refLevel, span_hz, rbw_hz)
+    spec_settings = Spectrum_Settings()
+    err_check(rsa.SPECTRUM_GetSettings(byref(spec_settings)))
+    trace_length = spec_settings.traceLength
+    
+    # Adjust frequency list calculation for 10 frequency points using MHz values
+    startfreq_mhz = cf_mhz - (span_mhz / 2)
+    stopfreq_mhz = cf_mhz + (span_mhz / 2)
+    step_mhz = (stopfreq_mhz - startfreq_mhz) / (trace_length - 1)
+    freq_list_mhz = [startfreq_mhz + i * step_mhz for i in range(trace_length)]
+
     loop_completed = [True]
 
     with open(CSV_FILE_PATH, 'r') as csvfile:
-        logging.info("opening csv file")
         csvreader = csv.reader(csvfile)
         next(csvreader)
+        logging.info("Opened csv file and started process_schedule()")
 
         for row in csvreader:
-            logging.info("csv file in process")
             handle_pause("Pause flag detected at start of row.", "Pause_flag removed. Restarting schedule...", loop_completed=loop_completed)
 
             # Investigate me
@@ -79,11 +168,7 @@ def process_schedule():
             aos_time = datetime.strptime(row[6], '%H:%M:%S').time()
             los_time = datetime.strptime(row[8], '%H:%M:%S').time()
 
-            satellite_name = row[1]
             now = datetime.utcnow().time()
-            
-            print(f'AOS: {aos_time}')
-            print(f'lOS: {los_time}')
 
             # If current time has already passed the scheduled los_datetime, skip to the next schedule
             if now > los_time:
@@ -91,7 +176,7 @@ def process_schedule():
 
             # If current time is before the scheduled aos_time, wait until aos_time is reached
             while now < aos_time:
-                logging.info("now < aos_time")
+                # logging.info("now < aos_time")
                 handle_pause("Pause flag detected. Pausing pass schedule.", "Pause_flag removed. Restarting schedule...", sleep_time=1, loop_completed=loop_completed)
                 now = datetime.utcnow().time()
                 sleep(1)
@@ -101,46 +186,51 @@ def process_schedule():
 
             #Between AOL/LOS time
             while True:
+                # logging.info(f'Triggered: {triggered}')
                 handle_pause("Schedule paused. Waiting for flag to be removed.", "Pause_flag removed. Restarting schedule...", loop_completed=loop_completed)
+                
                 now = datetime.utcnow().time()
                 if now >= los_time:
                     break
                     
                 if not triggered:
-                    print(f'Current scheduled row under test: {row}')
+                    logging.info(f'Current scheduled row under test: {row}')
                     triggered = True
 
-                    # Insert the data into MongoDB as a single document
-                    document = {
+                    # Insert the schedule data into MongoDB as a single document
+                    schedule_document = {
                         "timestamp": datetime.utcnow(),
                         "row": row,
                         }
-                    scheduleRun.insert_one(document)
+                    insert_result = scheduleRun.insert_one(schedule_document)
+                    document_id = insert_result.inserted_id
                 
                 # Intrumentation happens here
-                logging.info("doing instruemtnstuff")
+                trace = acquire_spectrum(specSet)
+                currentTime = datetime.today().isoformat(sep=' ', timespec='milliseconds')
+
+                # Create a document for MongoDB and insert into thew collection
+                frequencies = {str(round(freq, 4)): float(value) for freq, value in zip(freq_list_mhz, trace)}
+                document = {
+                    "timestamp": currentTime,
+                    "frequencies": frequencies
+                }
+                spectrumData.insert_one(document)
                 sleep(1)
             
-            # Only execute this part if the loop was not broken by the pause flag
-            if loop_completed[0]:  # Check if loop completed successfully
-                document_update = {
-                    "$set": {
-                        "processed": "true"  # Set processed to "true" as the loop completed successfully
-                    }
-                }
-                scheduleRun.update_one({"timestamp": document["timestamp"]}, document_update)
-                logging.info("Scheduled row completed successfully!")
+            # Updating scheduleRun after processing a row
+            if loop_completed[0]:  # This block and the else block need adjustment
+                document_update = {"$set": {"processed": "true"}}
+                logging.info("Scheduled row completed successfully and database updated!")
             else:
-                document_update = {
-                    "$set": {
-                        "processed": "false"  # Set processed to "false" as the loop did not complete successfully
-                    }
-                }
-                scheduleRun.update_one({"timestamp": document["timestamp"]}, document_update)
+                document_update = {"$set": {"processed": "false"}}
                 logging.info("Scheduled row encountered errors.")
 
+            update_result = scheduleRun.update_one({"_id": document_id}, document_update)
+            logging.info(f"Updated document _id: {document_id}, Matched count: {update_result.matched_count}, Modified count: {update_result.modified_count}")
+
 def main():
-    logging.info("Starting IFSS_RSA main routine")
+    logging.info("Started IFSS_RSA main routine")
 
     # Instrumentat setup here
 
@@ -148,11 +238,11 @@ def main():
         process_schedule()
         logging.info("Schedule finished for the day.\n")
     except Exception as e:
-        logging.info(f"An error occurred in RFSS_PXA.py main(): {e}")
+        logging.info(f"An error occurred in IFSS_PXA.py main(): {e}")
         restart_service()
 
 if __name__ == "__main__":
     try:    
         main()
     except Exception as e:
-        logging.error(f"An error occurred in RFSS_PXA.py: {e}")
+        logging.error(f"An error occurred in IFSS_PXA.py: {e}")
