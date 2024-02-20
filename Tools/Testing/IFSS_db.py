@@ -106,7 +106,7 @@ def spectrum_capture():
     freq_list_mhz = [startfreq_mhz + i * step_mhz for i in range(trace_length)]
 
     cycle = 0
-    while cycle < 20: # Remove this later
+    while cycle < 100: # Remove this later
         cycle += 1
         trace = acquire_spectrum(specSet)
         currentTime = datetime.today().isoformat(sep=' ', timespec='milliseconds')
@@ -119,7 +119,7 @@ def spectrum_capture():
         }
         spectrumData.insert_one(document)
 
-        sleep(.5) 
+        sleep(.1) 
         print(f'Last Trace Index: {cycle}')
 
 def main():
