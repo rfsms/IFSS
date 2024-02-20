@@ -13,8 +13,8 @@ satSchedule = db["satSchedule"]
 
 RTLD_LAZY = 0x0001
 LAZYLOAD = RTLD_LAZY | RTLD_GLOBAL
-rsa = CDLL("./libRSA_API.so", LAZYLOAD)
-usbapi = CDLL("./libcyusb_shared.so", LAZYLOAD)
+rsa = CDLL("/home/noaa_gms/IFSS/Tools/lib/libRSA_API.so", LAZYLOAD)
+usbapi = CDLL("/home/noaa_gms/IFSS/Tools/lib/libcyusb_shared.so", LAZYLOAD)
 
 ################ SETUP ################
 def err_check(rs):
@@ -84,8 +84,8 @@ def spectrum_capture():
     # span_mhz = 15.0
     # rbw_khz = 15.0
     # refLevel = -80
-    cf_mhz = 2437.0
-    span_mhz = 20.0
+    cf_mhz = 315.0
+    span_mhz = 15.0
     rbw_khz = 15.0
     refLevel = -40
     
@@ -106,7 +106,7 @@ def spectrum_capture():
     freq_list_mhz = [startfreq_mhz + i * step_mhz for i in range(trace_length)]
 
     cycle = 0
-    while cycle < 100: # Remove this later
+    while cycle < 20: # Remove this later
         cycle += 1
         trace = acquire_spectrum(specSet)
         currentTime = datetime.today().isoformat(sep=' ', timespec='milliseconds')
@@ -119,63 +119,8 @@ def spectrum_capture():
         }
         spectrumData.insert_one(document)
 
-        sleep(1) 
+        sleep(.5) 
         print(f'Last Trace Index: {cycle}')
-
-    # def find_schedules_for_today():
-    #     today_str = datetime.utcnow().strftime("%d-%b-%Y")
-    #     print(f"Finding schedules for today (UTC): {today_str}")
-    #     schedules = satSchedule.find({"startDate": today_str, "endDate": today_str})
-    #     return list(schedules)
-
-    # def spectrum_capture_for_schedule(start_time_str, end_time_str):
-    #     now = datetime.now(timezone.utc)
-    #     start_datetime = datetime.combine(now.date(), datetime.strptime(start_time_str, "%H:%M:%S").time(), tzinfo=timezone.utc)
-    #     end_datetime = datetime.combine(now.date(), datetime.strptime(end_time_str, "%H:%M:%S").time(), tzinfo=timezone.utc)
-
-    #     # Adjust for cases where end time is past midnight
-    #     if end_datetime < start_datetime:
-    #         end_datetime += timedelta(days=1)
-
-    #     print(f"Starting capture for schedule from {start_time_str} to {end_time_str} (UTC).")
-    #     while start_datetime <= now <= end_datetime:
-    #         print('Capturing')
-            
-    #         trace = acquire_spectrum(specSet)
-    #         currentTime = datetime.today().isoformat(sep=' ', timespec='milliseconds')
-
-    #         frequencies = {str(round(freq, 4)): float(value) for freq, value in zip(freq_list_mhz, trace)}
-    #         document = {
-    #             "timestamp": currentTime,
-    #             "frequencies": frequencies
-    #         }
-    #         spectrumData.insert_one(document)
-
-    #         now = datetime.now(timezone.utc)
-    #         sleep(1)
-
-    # # Main loop to continuously check and process schedules
-    # while True:
-    #     schedules = find_schedules_for_today()
-    #     if schedules:
-    #         print(f"Found {len(schedules)} schedules for today (UTC).")
-    #     else:
-    #         print("No schedules found for today (UTC). Waiting for next schedule...")
-
-    #     # Process each schedule found for today
-    #     for schedule in schedules:
-    #         print(schedule)
-    #         start_time = schedule['startTime']
-    #         end_time = schedule['endTime']
-    #         print(f"Processing schedule (UTC): Start Time - {start_time}, End Time - {end_time}")
-    #         spectrum_capture_for_schedule(start_time, end_time)
-
-    #     # Wait until the start of the next day (UTC) to refresh the schedule
-    #     now = datetime.now(timezone.utc)
-    #     next_day = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    #     wait_seconds = (next_day - now).total_seconds()
-    #     print(f"Waiting for the next day's schedules. Sleeping for {wait_seconds} seconds...")
-    #     sleep(wait_seconds)
 
 def main():
     print("Starting continuous spectrum capture based on schedule...")
