@@ -23,8 +23,8 @@ logging.basicConfig(filename='/home/noaa_gms/IFSS/IFSS_SA.log', level=logging.IN
 
 RTLD_LAZY = 0x0001
 LAZYLOAD = RTLD_LAZY | RTLD_GLOBAL
-rsa = CDLL("/home/noaa_gms/IFSS/libRSA_API.so", LAZYLOAD)
-usbapi = CDLL("/home/noaa_gms/IFSS/libcyusb_shared.so", LAZYLOAD)
+rsa = CDLL("/home/noaa_gms/IFSS/Tools/lib/libRSA_API.so", LAZYLOAD)
+usbapi = CDLL("/home/noaa_gms/IFSS/Tools/lib/libcyusb_shared.so", LAZYLOAD)
 
 CSV_FILE_PATH = '/home/noaa_gms/IFSS/Tools/Report_Exports/schedule.csv'
 
@@ -129,8 +129,8 @@ def process_schedule():
     # span_mhz = 15.0
     # rbw_khz = 15.0
     # refLevel = -80
-    cf_mhz = 2437.0
-    span_mhz = 20.0
+    cf_mhz = 315.0
+    span_mhz = 15.0
     rbw_khz = 15.0
     refLevel = -40
     
