@@ -44,6 +44,9 @@ def fetchReport():
     (\d+) captures 0 (over, ovr)
     (\d+) captures 1 (idle)
     '''
+
+    excluded_satellites = ["TERRA", "JPSS1", "NOAA 21", "AQUA", "NPP", "GCOM-W1"]
+
     try:
         now = datetime.utcnow()
         start_of_today = datetime(now.year, now.month, now.day)
@@ -64,7 +67,7 @@ def fetchReport():
                 data = response.read().decode('utf-8')
                 lines = data.splitlines()
                 
-                todaysDate = datetime.utcnow().strftime('%d-%b-%Y')  # Format for matching in the document
+                todaysDate = datetime.utcnow().strftime('%d-%b-%Y')
                 rows = []
 
                 # Process each line of the fetched data
@@ -72,6 +75,11 @@ def fetchReport():
                     match = re.match(r"(\d+)\s+([\w\s-]+)\s+(\w)\s+(\d+)\s+(\w+)\s+(\d+-\w+-\d+)\s+(\d+:\d+:\d+)\s+(\d+-\w+-\d+)\s+(\d+:\d+:\d+)\s+(\d+)\s+(\d+)", line)
                     if match:
                         parts = match.groups()
+                        #Exclude sats here and skip line if {excluded_satellites} found
+                        satellite_name = parts[1].strip()
+                        # Otherwise continue processing schedule
+                        if satellite_name in excluded_satellites:
+                            continue
                         startDate = parts[5]
                         if startDate == todaysDate:
                             record = {
