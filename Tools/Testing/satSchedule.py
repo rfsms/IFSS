@@ -15,7 +15,6 @@ satSchedule = db["testSatSchedule"]
 #     logging.root.removeHandler(handler)
 # logging.basicConfig(filename='/home/noaa_gms/IFSS/IFSS_SA.log', level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
-
 # Fetch report is done daily using schedule at 00:06 UTC 
 # since AOML/IRC all run cronjobs @ 00:05UTC for 48 hour window schedules)  
 def fetchReport():
