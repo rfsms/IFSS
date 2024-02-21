@@ -75,9 +75,28 @@ def acquire_spectrum(specSet):
     # Convert C float array to Python list of floats...arggghhh
     return [float(traceData[i]) for i in range(specSet.traceLength)]
 
-def spectrum_capture():
-    print("Connecting to the RSA306B...")
+def spectrum_capture(specSet, freq_list_mhz):
+
+    cycle = 0
+    while cycle < 100: # Remove this later
+        cycle += 1
+        trace = acquire_spectrum(specSet)
+        currentTime = datetime.today().isoformat(sep=' ', timespec='milliseconds')
+
+        # Create a document for MongoDB and insert into thew collection
+        frequencies = {str(round(freq, 4)): float(value) for freq, value in zip(freq_list_mhz, trace)}
+        document = {
+            "timestamp": currentTime,
+            "frequencies": frequencies
+        }
+        spectrumData.insert_one(document)
+
+        sleep(.1) 
+        print(f'Last Trace Index: {cycle}')
+
+def main():
     search_connect()
+    print("Connected to the RSA306B")
 
     # Define center frequency, span, and RBW in MHz cause math...
     # cf_mhz = 1702.5
@@ -105,26 +124,8 @@ def spectrum_capture():
     step_mhz = (stopfreq_mhz - startfreq_mhz) / (trace_length - 1)
     freq_list_mhz = [startfreq_mhz + i * step_mhz for i in range(trace_length)]
 
-    cycle = 0
-    while cycle < 100: # Remove this later
-        cycle += 1
-        trace = acquire_spectrum(specSet)
-        currentTime = datetime.today().isoformat(sep=' ', timespec='milliseconds')
-
-        # Create a document for MongoDB and insert into thew collection
-        frequencies = {str(round(freq, 4)): float(value) for freq, value in zip(freq_list_mhz, trace)}
-        document = {
-            "timestamp": currentTime,
-            "frequencies": frequencies
-        }
-        spectrumData.insert_one(document)
-
-        sleep(.1) 
-        print(f'Last Trace Index: {cycle}')
-
-def main():
-    print("Starting continuous spectrum capture based on schedule...")
-    spectrum_capture()
+    print("Starting spectrum capture")
+    spectrum_capture(specSet, freq_list_mhz)
 
 if __name__ == '__main__':
     main()

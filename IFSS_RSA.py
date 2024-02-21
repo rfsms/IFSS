@@ -115,40 +115,14 @@ def handle_pause(log_message, restart_message=None, sleep_time=5, loop_completed
 
         return was_paused
 
-def process_schedule():
+def process_schedule(specSet, freq_list_mhz):
     """
-    This function is the timinga and capture behind IFSS code.  Connect to RSA360 and setup for capture. Then read the CSV_FILE_PATH and goes through each row determining
-    aos/los, etc and compares against current time.  If older entries exist continue, if current time meet aos time then 
-    wait.  Once current time matches an aos, data is being captured until los.
+    This function is the timing and capture behind IFSS code.  Connect to RSA360 and setup for capture. Then read the CSV_FILE_PATH and goes through each row determining
+    aos/los, etc and compares against current time.  Three scenarios:
+       * If older entries exist continue (skip)
+       *  If current time matches an aos, data is being captured until los
+        * If current time doesnt meet aos time then continue (wait for aos)
     """
-    search_connect()
-    logging.info("Connected to RSA306B")
-
-    # Define center frequency, span, and RBW in MHz cause math...
-    # cf_mhz = 1702.5
-    # span_mhz = 15.0
-    # rbw_khz = 15.0
-    # refLevel = -80
-    cf_mhz = 315.0
-    span_mhz = 15.0
-    rbw_khz = 15.0
-    refLevel = -40
-    
-    # Convert MHz to Hz for the API calls
-    cf_hz = cf_mhz * 1e6
-    span_hz = span_mhz * 1e6
-    rbw_hz = rbw_khz * 1e3
-    
-    specSet = config_spectrum(cf_hz, refLevel, span_hz, rbw_hz)
-    spec_settings = Spectrum_Settings()
-    err_check(rsa.SPECTRUM_GetSettings(byref(spec_settings)))
-    trace_length = spec_settings.traceLength
-    
-    # Adjust frequency list calculation for 10 frequency points using MHz values
-    startfreq_mhz = cf_mhz - (span_mhz / 2)
-    stopfreq_mhz = cf_mhz + (span_mhz / 2)
-    step_mhz = (stopfreq_mhz - startfreq_mhz) / (trace_length - 1)
-    freq_list_mhz = [startfreq_mhz + i * step_mhz for i in range(trace_length)]
 
     loop_completed = [True]
 
@@ -233,9 +207,32 @@ def main():
     logging.info("Started IFSS_RSA main routine")
 
     # Instrumentat setup here
+    search_connect()
+    logging.info("Connected to RSA306B")
+
+    cf_mhz = 315.0
+    span_mhz = 15.0
+    rbw_khz = 15.0
+    refLevel = -40
+    
+    # Convert MHz to Hz for the API calls
+    cf_hz = cf_mhz * 1e6
+    span_hz = span_mhz * 1e6
+    rbw_hz = rbw_khz * 1e3
+    
+    specSet = config_spectrum(cf_hz, refLevel, span_hz, rbw_hz)
+    spec_settings = Spectrum_Settings()
+    err_check(rsa.SPECTRUM_GetSettings(byref(spec_settings)))
+    trace_length = spec_settings.traceLength
+    
+    # Adjust frequency list calculation for 10 frequency points using MHz values
+    startfreq_mhz = cf_mhz - (span_mhz / 2)
+    stopfreq_mhz = cf_mhz + (span_mhz / 2)
+    step_mhz = (stopfreq_mhz - startfreq_mhz) / (trace_length - 1)
+    freq_list_mhz = [startfreq_mhz + i * step_mhz for i in range(trace_length)]
 
     try:
-        process_schedule()
+        process_schedule(specSet, freq_list_mhz)
         logging.info("Schedule finished for the day.\n")
     except Exception as e:
         logging.info(f"An error occurred in IFSS_PXA.py main(): {e}")
