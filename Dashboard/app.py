@@ -10,7 +10,7 @@ logging.basicConfig(filename='/home/noaa_gms/IFSS/IFSS_SA.log', level=logging.IN
 
 app = Flask(__name__)
 
-client = MongoClient("mongodb://localhost:27017/")
+client = MongoClient('mongodb://localhost:27017/?replicaSet=rs0')
 db = client["ifss"]
 spectrumData = db["spectrumData"]
 satSchedule = db["satSchedule"]

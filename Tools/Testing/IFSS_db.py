@@ -2,14 +2,32 @@ from ctypes import *
 from time import sleep
 from RSA_API import *
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure
+
+# try:
+#     # Attempt to connect to MongoDB replica set
+#     client = MongoClient('mongodb://127.0.0.1:27017/?replicaSet=rs0')
+#     # Force a connection to verify our client can talk to the server
+#     client.admin.command('ping')
+#     print("MongoDB connection successful")
+# except ConnectionFailure as e:
+#     print(f"MongoDB connection failed: {e}")
 
 # MongoDB setup
-client = MongoClient('mongodb://localhost:27017/')
+client = MongoClient('mongodb://localhost:27017/?replicaSet=rs0')
 db = client["ifss"]
 spectrumData = db["spectrumData"]
 satSchedule = db["satSchedule"]
+
+# # Attempt to find the first document in the 'spectrumData' collection
+# first_document = spectrumData.find_one()
+
+# if first_document:
+#     print("First document in 'spectrumData':", first_document)
+# else:
+#     print("No documents found in 'spectrumData'.")
 
 RTLD_LAZY = 0x0001
 LAZYLOAD = RTLD_LAZY | RTLD_GLOBAL
@@ -78,7 +96,7 @@ def acquire_spectrum(specSet):
 def spectrum_capture(specSet, freq_list_mhz):
 
     cycle = 0
-    while cycle < 100: # Remove this later
+    while cycle < 20: # Remove this later
         cycle += 1
         trace = acquire_spectrum(specSet)
         currentTime = datetime.today().isoformat(sep=' ', timespec='milliseconds')
