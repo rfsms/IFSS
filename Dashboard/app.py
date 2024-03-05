@@ -6,11 +6,11 @@ from datetime import datetime, timedelta
 # Logging setup
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
-logging.basicConfig(filename='/home/noaa_gms/IFSS/IFSS_SA.log', level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+logging.basicConfig(filename='/home/its/IFSS/IFSS_SA.log', level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 app = Flask(__name__)
 
-client = MongoClient('mongodb://localhost:27017/?replicaSet=rs0')
+client = MongoClient('mongodb://localhost:27017/')
 db = client["ifss"]
 spectrumData = db["spectrumData"]
 satSchedule = db["satSchedule"]

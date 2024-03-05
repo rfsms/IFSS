@@ -6,34 +6,24 @@ from datetime import datetime
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 
-# try:
-#     # Attempt to connect to MongoDB replica set
-#     client = MongoClient('mongodb://127.0.0.1:27017/?replicaSet=rs0')
-#     # Force a connection to verify our client can talk to the server
-#     client.admin.command('ping')
-#     print("MongoDB connection successful")
-# except ConnectionFailure as e:
-#     print(f"MongoDB connection failed: {e}")
-
 # MongoDB setup
-client = MongoClient('mongodb://localhost:27017/?replicaSet=rs0')
+client = MongoClient('mongodb://localhost:27017/')
 db = client["ifss"]
 spectrumData = db["spectrumData"]
 satSchedule = db["satSchedule"]
 
-# # Attempt to find the first document in the 'spectrumData' collection
-# first_document = spectrumData.find_one()
-
-# if first_document:
-#     print("First document in 'spectrumData':", first_document)
-# else:
-#     print("No documents found in 'spectrumData'.")
-
 RTLD_LAZY = 0x0001
 LAZYLOAD = RTLD_LAZY | RTLD_GLOBAL
-rsa = CDLL("/home/noaa_gms/IFSS/Tools/lib/libRSA_API.so", LAZYLOAD)
-usbapi = CDLL("/home/noaa_gms/IFSS/Tools/lib/libcyusb_shared.so", LAZYLOAD)
+rsa = CDLL("/home/its/IFSS/Tools/lib/libRSA_API.so", LAZYLOAD)
+usbapi = CDLL("/home/its/IFSS/Tools/lib/libcyusb_shared.so", LAZYLOAD)
 
+err_check =0 
+
+def GetErrorString(error):
+        rsa.DEVICE_GetErrorString.restype = c_char_p
+        errorString = rsa.DEVICE_GetErrorString(error)
+        return errorString
+        
 ################ SETUP ################
 def err_check(rs):
     if ReturnStatus(rs) != ReturnStatus.noError:
@@ -72,33 +62,62 @@ def config_spectrum(cf=1e9, refLevel=0, span=40e6, rbw=300e3):
     specSet.verticalUnit = SpectrumVerticalUnits.SpectrumVerticalUnit_dBm
     specSet.span = span
     specSet.rbw = rbw
-    rsa.SPECTRUM_SetSettings(specSet)
+    
+    # Check for SPECTRUM_SetSettings error
+    rs = rsa.SPECTRUM_SetSettings(specSet)
+    err_check(rs)
+    
     rsa.SPECTRUM_GetSettings(byref(specSet))
     return specSet
 
 def acquire_spectrum(specSet):
-    ready = c_bool(False)
-    traceArray = c_float * specSet.traceLength
-    traceData = traceArray()
-    outTracePoints = c_int(0)
-    traceSelector = SpectrumTraces.SpectrumTrace1
+    try:
+        # rsa.DEVICE_Reset()
+        # print('Device reset')
+        print('Entering acquire()')
+        ready = c_bool(False)
+        traceArray = c_float * specSet.traceLength
+        traceData = traceArray()
+        outTracePoints = c_int(0)
+        traceSelector = SpectrumTraces.SpectrumTrace1
 
-    rsa.DEVICE_Run()
-    rsa.SPECTRUM_AcquireTrace()
-    while not ready.value:
-        rsa.SPECTRUM_WaitForDataReady(c_int(100), byref(ready))
-    rsa.SPECTRUM_GetTrace(traceSelector, specSet.traceLength, byref(traceData), byref(outTracePoints))
-    rsa.DEVICE_Stop()
-    
-    # Convert C float array to Python list of floats...arggghhh
-    return [float(traceData[i]) for i in range(specSet.traceLength)]
+        rsa.DEVICE_Run()
+        print('Device running')
+
+        rsa.SPECTRUM_AcquireTrace()
+        print('Acquiring')
+        # Increase timeout or add a mechanism to break out after several attempts
+        attempts = 0
+        while not ready.value and attempts < 10:
+            rsa.SPECTRUM_WaitForDataReady(c_int(100), byref(ready))  # Timeout increased to 1000 ms
+            attempts += 1
+            if not ready.value:
+                print("Data not ready, waiting...")
+        
+        if not ready.value:
+            print("Failed to acquire data after several attempts.")
+            rsa.DEVICE_Stop()
+            return []
+
+        rsa.SPECTRUM_GetTrace(traceSelector, specSet.traceLength, byref(traceData), byref(outTracePoints))
+        rsa.DEVICE_Stop()
+
+        # Convert C float array to Python list of floats
+        return [float(traceData[i]) for i in range(outTracePoints.value)]
+    except KeyboardInterrupt:
+        print("Acquisition interrupted by user. Cleaning up...")
+        rsa.DEVICE_Stop()
+        sys.exit(1)
+
 
 def spectrum_capture(specSet, freq_list_mhz):
 
     cycle = 0
     while cycle < 20: # Remove this later
         cycle += 1
+        print(f'Trace {cycle}: ')
         trace = acquire_spectrum(specSet)
+        print(f'Trace {cycle}: ')
         currentTime = datetime.today().isoformat(sep=' ', timespec='milliseconds')
 
         # Create a document for MongoDB and insert into thew collection
@@ -109,7 +128,7 @@ def spectrum_capture(specSet, freq_list_mhz):
         }
         spectrumData.insert_one(document)
 
-        sleep(.1) 
+        sleep(1) 
         print(f'Last Trace Index: {cycle}')
 
 def main():
@@ -117,14 +136,10 @@ def main():
     print("Connected to the RSA306B")
 
     # Define center frequency, span, and RBW in MHz cause math...
-    # cf_mhz = 1702.5
-    # span_mhz = 15.0
-    # rbw_khz = 15.0
-    # refLevel = -80
-    cf_mhz = 315.0
+    cf_mhz = 140.0
     span_mhz = 15.0
     rbw_khz = 15.0
-    refLevel = -40
+    refLevel = -80
     
     # Convert MHz to Hz for the API calls
     cf_hz = cf_mhz * 1e6

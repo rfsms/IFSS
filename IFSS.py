@@ -9,14 +9,14 @@ import csv
 import re
 
 # MongoDB setup
-client = MongoClient('mongodb://localhost:27017/?replicaSet=rs0')
+client = MongoClient('mongodb://localhost:27017/')
 db = client["ifss"]
 satSchedule = db["satSchedule"]
 
 # Reset the Root Logger and seup logging
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
-logging.basicConfig(filename='/home/noaa_gms/IFSS/IFSS_SA.log', level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+logging.basicConfig(filename='/home/its/IFSS/IFSS_SA.log', level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 # Fetch report is done daily using schedule at 00:06 UTC 
 # since AOML/IRC all run cronjobs @ 00:05UTC for 48 hour window schedules)  
@@ -45,7 +45,8 @@ def fetchReport():
     (\d+) captures 1 (idle)
     '''
 
-    excluded_satellites = ["TERRA", "JPSS1", "NOAA 21", "AQUA", "NPP", "GCOM-W1"]
+    # excluded_satellites = ["TERRA", "JPSS1", "NOAA 21", "AQUA", "NPP", "GCOM-W1"]
+    excluded_satellites = []
 
     try:
         now = datetime.utcnow()
@@ -101,7 +102,7 @@ def fetchReport():
                 rows.sort(key=lambda x: x['startTime'])
 
                 # Write the schedule to a CSV file
-                output_path = "/home/noaa_gms/IFSS/Tools/Report_Exports/schedule.csv"
+                output_path = "/home/its/IFSS/Tools/Report_Exports/schedule.csv"
                 with open(output_path, 'w', newline='') as file:
                     writer = csv.writer(file)
                     writer.writerow(["ITEM", "SAT", "DIR", "EL", "MODE", "Start Date", "Start Time", "End Date", "End Time", "OVR", "IDLE"])

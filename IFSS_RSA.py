@@ -10,7 +10,7 @@ import csv
 import os
 
 # MongoDB setup
-client = MongoClient('mongodb://localhost:27017/?replicaSet=rs0')
+client = MongoClient('mongodb://localhost:27017/')
 db = client["ifss"]
 spectrumData = db["spectrumData"]
 satSchedule = db["satSchedule"]
@@ -19,14 +19,14 @@ scheduleRun = db["scheduleRun"]
 # Reset the Root Logger and seup logging
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
-logging.basicConfig(filename='/home/noaa_gms/IFSS/IFSS_SA.log', level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+logging.basicConfig(filename='/home/its/IFSS/IFSS_SA.log', level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 RTLD_LAZY = 0x0001
 LAZYLOAD = RTLD_LAZY | RTLD_GLOBAL
-rsa = CDLL("/home/noaa_gms/IFSS/Tools/lib/libRSA_API.so", LAZYLOAD)
-usbapi = CDLL("/home/noaa_gms/IFSS/Tools/lib/libcyusb_shared.so", LAZYLOAD)
+rsa = CDLL("/home/its/IFSS/Tools/lib/libRSA_API.so", LAZYLOAD)
+usbapi = CDLL("/home/its/IFSS/Tools/lib/libcyusb_shared.so", LAZYLOAD)
 
-CSV_FILE_PATH = '/home/noaa_gms/IFSS/Tools/Report_Exports/schedule.csv'
+CSV_FILE_PATH = '/home/its/IFSS/Tools/Report_Exports/schedule.csv'
 
 ################ RSA SETUP AND CONFIG ################
 def err_check(rs):
@@ -88,7 +88,7 @@ def acquire_spectrum(specSet):
 def restart_service():
     try:
         logging.info("Attempting to restart IFSS.service")
-        subprocess.run(['sudo', '/home/noaa_gms/IFSS/Tools/restart_IFSS.sh'], check=True)
+        subprocess.run(['sudo', '/home/its/IFSS/Tools/restart_IFSS.sh'], check=True)
         logging.info(f"Successfully requested restart IFSS.service.")
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to restart the IFSS.service: {e}")
@@ -98,7 +98,7 @@ def restart_service():
 def handle_pause(log_message, restart_message=None, sleep_time=5, loop_completed=None):
     log_flag = True
     was_paused = False
-    while os.path.exists("/home/noaa_gms/IFSS/pause_flag.txt"):
+    while os.path.exists("/home/its/IFSS/pause_flag.txt"):
         if log_flag:
             logging.info(log_message)
             log_flag = False
