@@ -210,10 +210,10 @@ def main():
     search_connect()
     logging.info("Connected to RSA306B")
 
-    cf_mhz = 315.0
+    cf_mhz = 140.0
     span_mhz = 15.0
     rbw_khz = 15.0
-    refLevel = -40
+    refLevel = -30
     
     # Convert MHz to Hz for the API calls
     cf_hz = cf_mhz * 1e6
