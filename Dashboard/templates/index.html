@@ -27,6 +27,7 @@
             background-color: #4b4b4b;
         }
         #scheduleData th {
+            position: sticky;
             top: 0;
             background-color: #333;
             z-index: 2;
@@ -41,14 +42,14 @@
 </head>
 <body class="bg-black text-white">
     <div class="grid grid-cols-2 grid-rows-2 h-screen">
-        <div class="frequency-data border border-white p-4">
-            <canvas id="lineChart"></canvas>
-        </div>
-        <div id="right" class="quadrant border border-white row-span-2 p-4 flex flex-col justify-center items-center">
+        <div id="right" class="quadrant border border-white p-4 row-span-1 flex justify-center">
             <div id="scheduleData">Loading schedule data...</div>
         </div>
-        <div id="spectrogramPlot" class="quadrant border border-white p-4"></div>
-    </div>
+        <div id="spectrogramPlot" class="quadrant border border-white row-span-2 p-4 flex flex-col justify-center items-center"></div>
+        <div class="frequency-data border border-white p-4 col-span-1">
+            <canvas id="lineChart"></canvas>
+        </div>
+    </div>  
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <script>
@@ -59,7 +60,7 @@
         let maxTimeSlices = 60;
         let currentFrequencies;
         let currentValues;
-        const headers = ["ITEM", "SAT", "DIR", "EL", "MODE", "START TIME", "END TIME"];
+        const headers = ["ITEM", "SATELLITE", "DIR", "EL", "MODE", "START TIME", "END TIME"];
 
         function scrollToHighlightedRow() {
             // console.log("Attempting to scroll to the next or current event...");
@@ -172,7 +173,7 @@
                         let text = '';
                         switch (header) {
                             case 'ITEM': text = item.item || 'N/A'; break;
-                            case 'SAT': text = item.sat || 'N/A'; break;
+                            case 'SATELLITE': text = item.sat || 'N/A'; break;
                             case 'DIR': text = item.dir || 'N/A'; break;
                             case 'EL': text = item.el || 'N/A'; break;
                             case 'MODE': text = item.mode || 'N/A'; break;
